@@ -30,6 +30,16 @@ const EXECUTION_CONTEXT_DESTROYED_ERROR = "Execution context was destroyed";
 const NETWORK_IDLE_STATE = "networkidle0";
 const NETWORK_STATES = ["networkidle0", "networkidle2", "load", "domcontentloaded"];
 
+// import user customiser, or gracefully revert to original state
+const user_customiser = (() => {
+    try {
+        return require('../user_customiser.js');
+    } catch (ex) {
+		// console.log(ex);
+        return {};
+    }
+})();
+
 let browser, context;
 
 exports.initialize = async options => {
@@ -94,6 +104,8 @@ function getBrowserOptions(options = {}) {
 }
 
 async function setPageOptions(page, options) {
+	if (user_customiser.setPageOptionsPre)
+		await user_customiser.setPageOptionsPre(page, options);
 	if (options.browserWidth && options.browserHeight) {
 		await page.setViewport({
 			width: options.browserWidth,
@@ -123,6 +135,8 @@ async function setPageOptions(page, options) {
 			password: options.httpProxyPassword
 		});
 	}
+	if (user_customiser.setPageOptionsPost)
+		await user_customiser.setPageOptionsPost(page, options);
 }
 
 async function getPageData(context, page, options) {
@@ -188,6 +202,8 @@ async function handleJSRedirect(context, options) {
 }
 
 async function pageGoto(page, options) {
+	if (user_customiser.pageGotoPre)
+		await user_customiser.pageGotoPre(page, options);
 	const loadOptions = {
 		timeout: options.browserLoadMaxTime || 0,
 		waitUntil: options.browserWaitUntil || NETWORK_IDLE_STATE
@@ -198,4 +214,6 @@ async function pageGoto(page, options) {
 	} else {
 		await page.goto(options.url, loadOptions);
 	}
+	if (user_customiser.pageGotoPost)
+		await user_customiser.pageGotoPost(page, options);
 }
