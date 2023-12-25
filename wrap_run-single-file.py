@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import sys
+import os
 import subprocess
 
 
@@ -28,12 +29,19 @@ class ProcessRunner:
             bufsize=1,
             text=True,
         )
+        # The following make it so that readline on the target file
+        # (i.e. stderr) is non-blocking.
+        # NOTE: it only works on unix system.
+        os.set_blocking(self.process.stderr.fileno(), False)
         exit_status = self.process.poll()
         while exit_status is None:
-            output = self.process.stdout.readline().strip()
-            self.output_callback(output)
-            if self.print_output_on_screen:
-                print(output)
+            for output in (
+                self.process.stdout.readline().strip(),
+                self.process.stderr.readline().strip(),
+            ):
+                self.output_callback(output)
+                if self.print_output_on_screen:
+                    print(output)
             exit_status = self.process.poll()
         return exit_status
 
