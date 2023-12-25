@@ -3,10 +3,23 @@
 import sys
 import os
 import subprocess
+import time
 
 
 class RestartSignal(Exception):
     pass
+
+
+def read_until_empty(file_descriptor):
+    # MAKE SURE that the given file descriptor
+    # is set to non-blocking mode.
+    output = ""
+    line = file_descriptor.readline()
+    while line != "":
+        output += line
+        # time.sleep(0.1)
+        line = file_descriptor.readline()
+    return output.rstrip()
 
 
 class ProcessRunner:
@@ -14,13 +27,19 @@ class ProcessRunner:
         self,
         cmd,
         print_output_on_screen: bool = True,
-        output_callback=lambda x: None,
+        stdout_callback=lambda x: None,
+        stderr_callback=None,
     ):
         self.cmd = cmd
         self.print_output_on_screen = print_output_on_screen
-        self.output_callback = output_callback
 
-    def run(self):
+        if stderr_callback is None:
+            stderr_callback = stdout_callback
+
+        self.stdout_callback = stdout_callback
+        self.stderr_callback = stderr_callback
+
+    def run(self, poll_rate: float = 1):
         self.process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -32,16 +51,25 @@ class ProcessRunner:
         # The following make it so that readline on the target file
         # (i.e. stderr) is non-blocking.
         # NOTE: it only works on unix system.
+        os.set_blocking(self.process.stdout.fileno(), False)
         os.set_blocking(self.process.stderr.fileno(), False)
         exit_status = self.process.poll()
         while exit_status is None:
-            for output in (
-                self.process.stdout.readline().strip(),
-                self.process.stderr.readline().strip(),
-            ):
-                self.output_callback(output)
-                if self.print_output_on_screen:
-                    print(output)
+            time.sleep(poll_rate)
+
+            stdout = read_until_empty(self.process.stdout)
+            stderr = read_until_empty(self.process.stderr)
+            if self.print_output_on_screen:
+                if stdout:
+                    print(stdout)
+                if stderr:
+                    print(stderr, file=sys.stderr)
+
+            if stdout:
+                self.stdout_callback(stdout)
+            if stderr:
+                self.stderr_callback(stderr)
+
             exit_status = self.process.poll()
         return exit_status
 
@@ -49,7 +77,7 @@ class ProcessRunner:
         self.process.kill()
 
 
-def output_callback(output_line):
+def stdout_callback(output_line):
     """
     The traceback signal some sort of error in the whole chrome process, which cannot
     be refined without restarting.
@@ -84,7 +112,7 @@ try:
         try:
             print(f"============= RUN {i} =============")
             i += 1
-            runner = ProcessRunner(cmd, output_callback=output_callback)
+            runner = ProcessRunner(cmd, stdout_callback=stdout_callback)
             if runner.run() == 0:
                 break
         except RestartSignal:
